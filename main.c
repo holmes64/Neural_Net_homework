@@ -8,6 +8,9 @@ double calculate_portion(int*);
 double logistic_function(double);
 void foward_propagation(double [64][100], double*, double*, double [100][20], double*);
 void calc_mesh_feature(double*, int, int [64][64][100]);
+void rand_init(double [65][100]);
+void rand_init2(double [100][20]);
+void teacher_data(double [20][20]);
 
 #define MAX 6400
 
@@ -50,125 +53,74 @@ int main(){
     calc_mesh_feature(y_i, z, moji_raw);
 
     //debug
-    
-    for(i=0;i<=64;i++){
-        printf("%f\n", y_i[i]);
-    }
-    
-
-    // %%%%%%%%%%%%%%%% ここまではmainでok%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+    //for(i=0;i<=64;i++){    printf("%f\n", y_i[i]);  }
 
     // weight 乱数初期化[0-1]/////////////////////////////////////////////////
      double w_ji[65][100]; // 中間層の重み ユニット数は100 
      double w_kj[100][20]; // // 出力層の重み 
-    // w_ji 
-    for(i=0;i<=64;i++){
-        for(j=0;j<=99;j++){
-            w_ji[i][j] = rand() / (1.0+RAND_MAX);
-        }
-    }
-    for(i=0;i<=99;i++){
-        w_ji[64][i] = 1.0;
-    }
- 
-    //w_kj
-    for(i=0;i<=99;i++){
-        for(j=0;j<=19;j++){
-           w_kj[i][j] = rand() / (1.0+RAND_MAX);
-        }
-    }
 
-    /*
+     rand_init(w_ji);
+     rand_init2(w_kj);
+
     //debug
-    for(i=0;i<=63;i++){
-        for(j=0;j<=99;j++){
-            printf("%f\n", w_ji[i][j]);
-        }
-    }
-    */
+    //for(i=0;i<=64;i++){ for(j=0;j<=99;j++){ printf("%f\n", w_ji[i][j]); } }
 
     // 学習アルゴリズム //////////////////////////////////////////////////////
     double y_j[100];
     double y_k[20];
-    foward_propagation(w_ji, y_i, y_j, w_kj, y_k); // equation1, 2 
-    // debug
-    /*
-    for(i=0;i<=19;i++){
-        printf("%f\n", y_k[i]);
-    }
-    */
-
+    foward_propagation(w_ji, y_i, y_j, w_kj, y_k); // equation1, 2  
+    // debug 
+    //for(i=0;i<=19;i++){ printf("%f\n", y_k[i]); }
+    
     // パラメータの準備 ////////////////////////////////////////////////////// 
     double alpha = 0.01; // 安定化定数 
     double eta = 0.01;   // 学習定数
 
     // 教師信号y^
     double y_hat[20][20];
-    for(i=0;i<=19;i++){
-        for(j=0;j<=19;j++){
-            if(i == j){
-                y_hat[i][j] = 1.0;
-            }else{
-                y_hat[i][j] = 0.0;
-            }
-        }
-    }
+    teacher_data(y_hat);
+
+    ///////////////// stop ////////////////////////////////////////////////////
 
    // 重みの更新
    // 式5 /////////////////////////////////////////////////////////////////////
    // alpha * delta w_kj -----------------------------------------------------
-   double w_before[100][20];
+   double delta_wkj[100][20]; //更新量
    for(i=0;i<=99;i++){
        for(j=0;j<=19;j++){
-           w_before[i][j] = alpha * w_kj[i][j];
-           //printf("%f\n", w_before[i][j]);
+           delta_wkj[i][j] = alpha * delta_wkj[i][j];
         }
     }
 
-   // (y_k hat - y_k) --------------------------------------------------------
-   int tt = 0;
+   // (y_k hat - y_k) * y_k --------------------------------------------------
+   int tt = 0; // 重要
+   double w_kj_temp2 = 0.0;
    double w_kj_temp[20];
    for(i=0;i<=19;i++){
        w_kj_temp[i] = ( y_hat[tt][i] - y_k[i] );
        //printf("%f", w_kj_temp[i]);
-    }
-
-    // (y_k hat - y_k) * y_k -------------------------------------------------
-    double w_kj_temp2 = 0.0;
-    for(i=0;i<=19;i++){
-        w_kj_temp2 += w_kj_temp[i] * y_k[i];
+       w_kj_temp2 += w_kj_temp[i] * y_k[i];
     }
     //printf("%f\n", w_kj_temp2);
 
-    // (y_k hat - y_k) * y_k * (1 - y_k) -------------------------------------
+    // eta * (y_k hat - y_k) * y_k * (1 - y_k) -------------------------------------
     // ww_share は式6でも使用
-    double w_kj_temp3[20];
     double ww_share[20];
     for(i=0;i<=19;i++){
-        w_kj_temp3[i] =  w_kj_temp2 * ( 1 - y_k[i] );
-        //printf("%f\n", w_kj_temp3[i]); //debug
-    }
-    for(i=0;i<=19;i++){
-        ww_share[i] = w_kj_temp3[i];
-        w_kj_temp3[i] = eta * w_kj_temp3[i];
-        //printf("%f \t %f \n", ww_share[i], w_kj_temp3[i]);
-    }
-
-    // eta * (y_k hat - y_k) * y_k * (1 - y_k) * y_j -------------------------
-    double w_kj_temp4[100][20];
-    for(i=0;i<=99;i++){
-        for(j=0;j<=19;j++){
-            w_kj_temp4[i][j] = w_kj_temp3[j] * y_j[i];
-            //printf("%f", w_kj_temp4[i][j]);
-        }
-        //printf("\n");
+        w_kj_temp[i] =  w_kj_temp2 * ( 1 - y_k[i] );
+        ww_share[i] = w_kj_temp[i];
+        w_kj_temp[i] = eta * w_kj_temp[i];
+        //printf("%f\n", w_kj_temp[i]); //debug
     }
 
     // eta * (y_k hat - y_k) * y_k * (1 - y_k) * y_j + alpha delta w_k -------
+    // w_kjの更新まで
+    double w_kj_temp3[100][20];
     for(i=0;i<=99;i++){
         for(j=0;j<=19;j++){
-            w_kj[i][j] += w_before[i][j];
+            w_kj_temp3[i][j] = w_kj_temp[j] * y_j[i];
+            delta_wkj[i][j] += w_kj_temp3[i][j];
+            w_kj[i][j] += delta_wkj[i][j];
             //printf("%f", w_kj[i][j]);
         }
         //printf("\n");
@@ -176,18 +128,16 @@ int main(){
 
     // 式6 ///////////////////////////////////////////////////////////////////
     // alpha * delta w_ji  ---------------------------------------------------
-    double w_ji_before[65][100];
+    double delta_wji[65][100];
     for(i=0;i<=64;i++){
         for(j=0;j<=99;j++){
-            w_ji_before[i][j] = alpha * w_ji[i][j];
+            delta_wji[i][j] = alpha * delta_wji[i][j];
         }
     }
 
     // eta * y_j * (1 - y_j) -------------------------------------------------
     double w_ji_temp = 0.0;
-    for(i=0;i<=99;i++){
-        w_ji_temp += y_j[i] * (1 - y_j[i]);
-    }
+    for(i=0;i<=99;i++){ w_ji_temp += y_j[i] * (1 - y_j[i]); }
     w_ji_temp = eta * w_ji_temp;
     //printf("%f", w_ji_temp);
 
@@ -202,24 +152,22 @@ int main(){
     double w_ji_temp3[100];
     for(i=0;i<=99;i++){
         for(j=0;j<=19;j++){
-            w_ji_temp3[i] += ww_share[j] * w_kj[j][i];
+            w_ji_temp3[i] += ww_share[j] * w_kj[i][j];
         }
-        //printf("%f", w_ji_temp3[i]);
-    }
-
-    // eta * y_j * (1 - y_j) * yi Σ(y_k hat - y_k_ * y_k * (1 - y_k) * w_kj --
-    double w_ji_temp4[100][65];
-    for(i=0;i<=99;i++){
-        for(j=0;j<=64;j++){
-            w_ji_temp4[i][j] = w_ji_temp2[j] * w_ji_temp3[i];
-        }
+        printf("%f\n", w_ji_temp3[i]);
     }
 
     // eta*y_j*(1-y_j)*y_i Σ(y_k hat - y_k) y_k (1-y_k)*w_kj+alpha*deltaw_ji--
-    for(i=0;i<=99;i++){
-        for(j=0;j<=65;j++){
-            w_ji[i][j] = w_ji_temp4[i][j] + w_ji_before[i][j];
+    // w_ji　の重み更新まで
+    double w_ji_temp4[65][100];
+    for(i=0;i<=64;i++){
+        for(j=0;j<=99;j++){
+            w_ji_temp4[i][j] = w_ji_temp2[i] * w_ji_temp3[j];
+            delta_wji[i][j] = w_ji_temp4[i][j] + delta_wji[i][j];
+            w_ji[i][j] += delta_wji[i][j];
+            //printf("%f", delta_wji[i][j]);
         }
+        //printf("\n");
     }
 
 /*    // 出力ユニットの平均2乗誤差 ////////////////////////////////////////////
@@ -281,6 +229,28 @@ double calculate_portion(int* vec){
     return portion;
 }
 
+void rand_init(double w_ji[65][100]){
+    int i, j;
+    // w_ji 
+    for(i=0;i<=64;i++){
+        for(j=0;j<=99;j++){
+            w_ji[i][j] = rand() / (1.0+RAND_MAX);
+        }
+    }
+    for(i=0;i<=99;i++){
+        w_ji[64][i] = 1.0;
+    }
+}
+
+void rand_init2(double w_kj[100][20]){
+    int i, j;
+    //w_kj
+    for(i=0;i<=99;i++){
+        for(j=0;j<=19;j++){
+           w_kj[i][j] = rand() / (1.0+RAND_MAX);
+        }
+    }
+}
 
 void calc_mesh_feature(double* y_i, int z, int moji_raw[64][64][100]){
     // メッシュ特徴量の計算 //////////////////////////////////////////////////
@@ -307,7 +277,18 @@ void calc_mesh_feature(double* y_i, int z, int moji_raw[64][64][100]){
     y_i[64] = 1.0;
 }
 
-
+void teacher_data(double y_hat[20][20]){
+    int i, j;
+    for(i=0;i<=19;i++){
+        for(j=0;j<=19;j++){
+            if(i == j){
+                y_hat[i][j] = 1.0;
+            }else{
+                y_hat[i][j] = 0.0;
+            }
+        }
+    }
+}
 
 
 
