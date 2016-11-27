@@ -6,14 +6,15 @@
 
 double calculate_portion(int*);
 double logistic_function(double);
-void foward_propagation(double [64][100], double*, double*, double [100][20], double*);
+double root_mean_square(double [20][20] , double* , int);
+void forward_propagation(double [64][100], double*, double*, double [100][20], double*);
+void back_propagation(double [100][20], double [65][100], double [100][20], double [65][100], int , double [20][20] , double*, double*, double* );
 void calc_mesh_feature(double*, int, int [64][64][100]);
 void rand_init(double [65][100]);
 void rand_init2(double [100][20]);
 void teacher_data(double [20][20]);
-
+    
 #define MAX 6400
-
 
 int main(){
     int moji_raw[64][64][100]; // ひらがな画像
@@ -21,71 +22,144 @@ int main(){
     char line[MAX];
     char temp[10];
     int count = 0;
+    int train_num = 1; //学習回数
+    int tt = 0; // 各文字ごとの数　最大20
+    double rms_sum = 0.0;
+    double rms_sum_mean = 100.0;
 
-    // ファイルの読み込み ////////////////////////////////////////////////////
-    FILE* fp = fopen("Data/hira0_00L.dat", "r");
-    while( fgets(line, MAX, fp) != NULL ){ //一行ずつ読み込む
-      //printf("%s", line); //debug
-      //文字列を一文字ずつ抜き出して整数型に変換し配列に格納
-      //64×64×100の画像とする
-        for(i=0;i<=63;i++){
-            strncpy(temp, line+i, 1);
-            int num = atoi(temp);
-            moji_raw[j][i][k] = num;
-            printf("%d", moji_raw[j][i][k]);
-            count += 1;
-            if(count==64){
-                printf("\n");
-                count = 0;
-            }
-        }
-        ++j;
-        if(j==64){
-           k +=1;   j=0;
-        }
-
-    }
-    fclose(fp);
-
-    // 入力値y_iの準備 ////////////////////////////////////////////////////////
-    double y_i[65];
-    int z=0;
-    calc_mesh_feature(y_i, z, moji_raw);
-
-    //debug
-    //for(i=0;i<=64;i++){    printf("%f\n", y_i[i]);  }
-
-    // weight 乱数初期化[0-1]/////////////////////////////////////////////////
-     double w_ji[65][100]; // 中間層の重み ユニット数は100 
-     double w_kj[100][20]; // // 出力層の重み 
-
-     rand_init(w_ji);
-     rand_init2(w_kj);
-
-    //debug
-    //for(i=0;i<=64;i++){ for(j=0;j<=99;j++){ printf("%f\n", w_ji[i][j]); } }
-
-    // 学習アルゴリズム //////////////////////////////////////////////////////
-    double y_j[100];
-    double y_k[20];
-    foward_propagation(w_ji, y_i, y_j, w_kj, y_k); // equation1, 2  
-    // debug 
-    //for(i=0;i<=19;i++){ printf("%f\n", y_k[i]); }
-    
     // パラメータの準備 ////////////////////////////////////////////////////// 
     double alpha = 0.01; // 安定化定数 
     double eta = 0.01;   // 学習定数
 
-    // 教師信号y^
+    // 教師信号y^ /////////////////////////////////////////////////////////////
     double y_hat[20][20];
     teacher_data(y_hat);
 
-    ///////////////// stop ////////////////////////////////////////////////////
+    // weight 乱数初期化[0-1]/////////////////////////////////////////////////
+    double w_ji[65][100]; // 中間層の重み ユニット数は100 
+    double w_kj[100][20]; // // 出力層の重み 
 
-   // 重みの更新
+    rand_init(w_ji);
+    rand_init2(w_kj);
+
+    double delta_wkj[100][20]; //更新量
+    double delta_wji[65][100]; //更新量
+
+    // データの読み込み ////////////////////////////////////////////////////
+    while(rms_sum_mean >= 0.06 ){
+        int ii,jj;
+        char F_name2[] = "L.dat";
+        char ll[4] = "0";
+        char rr[] = "0";
+        for(ii=0;ii<=1;ii++){
+            for(jj=0;jj<=9;jj++){
+                char F_name1[20] = "Data/hira0_";
+                sprintf(ll, "%d", ii);
+                sprintf(rr, "%d", jj);
+                strcat(ll,rr);
+                strcat(F_name1, ll);
+                strcat(F_name1, F_name2);
+                //printf("%s\n", F_name1);
+                FILE* fp = fopen(F_name1, "r");
+                while( fgets(line, MAX, fp) != NULL ){ //一行ずつ読み込む
+                //printf("%s", line); //debug
+                //文字列を一文字ずつ抜き出して整数型に変換し配列に格納
+                //64×64×100の画像とする
+                    for(i=0;i<=63;i++){
+                        strncpy(temp, line+i, 1);
+                        int num = atoi(temp);
+                        moji_raw[j][i][k] = num;
+                        //printf("%d", moji_raw[j][i][k]);
+                        count += 1;
+                        if(count==64){
+                            //printf("\n");
+                            count = 0;
+                        }
+                    }
+                    ++j;
+                    if(j==64){
+                        k +=1;   j=0;
+                    }
+
+                }
+                fclose(fp);
+                k = 0;
+
+                // 入力値y_iの準備 ////////////////////////////////////////////////
+                double y_i[65];
+                int z=0;
+                for(z=0;z<=99;z++){
+                    calc_mesh_feature(y_i, z, moji_raw);
+
+                    // 学習アルゴリズム ///////////////////////////////////////
+                    double y_j[100]; double y_k[20];
+                    forward_propagation(w_ji, y_i, y_j, w_kj, y_k); // equation1, 2
+                    // debug 
+                    //for(i=0;i<=19;i++){ printf("%f\n", y_k[i]); }
+                    back_propagation(w_kj, w_ji, delta_wkj, delta_wji, tt, y_hat, y_k, y_j, y_i);
+                    double rms;
+                    rms = root_mean_square(y_hat, y_k, tt);
+                    rms_sum += rms;
+                }
+                //printf("%f\n", rms_sum);
+            }
+        }
+        rms_sum_mean = rms_sum / 2000;
+        printf("%d \t %f\n", train_num, rms_sum_mean);
+        train_num++;
+        rms_sum = 0.0;
+    }
+
+    // 識別アルゴリズム
+
+
+        return 0;
+}
+
+double root_mean_square(double y_hat[20][20], double* y_k, int tt){
+    int i, j;
+    double diff[20];
+    double k_n = 20;
+    double diff_sum;    
+ 
+    // (y_hat - y_k)^2 -------------------------------------------------------
+    for(i=0;i<=19;i++){
+       diff[i] = ( y_hat[tt][i] - y_k[i] ) * ( y_hat[tt][i] - y_k[i] );
+    }
+    for(i=0;i<=19;i++){
+       diff_sum += diff[i];
+    }
+    diff_sum /=  k_n;
+    return diff_sum;
+}
+
+void forward_propagation(double w_ji[64][100], double* y_i, double* y_j, double w_kj[100][20], double* y_k){
+    int i, j = 0;
+    int i_num = 63;
+    int m_num = 99;
+    int o_num = 19;
+    for(i=0;i<=m_num;i++){  // equation1
+        for(j=0;j<=i_num;j++){
+            y_j[i] += y_i[j] * w_ji[j][i];
+        }
+        y_j[i] = logistic_function(y_j[i]);
+    }
+
+    for(i=0;i<=m_num;i++){
+        for(j=0;j<=o_num;j++){
+            y_k[i] += y_j[j] * w_kj[j][i];
+        }
+        y_k[i] = logistic_function(y_k[i]);
+    }
+}
+
+void back_propagation(double w_kj[100][20], double w_ji[65][100], double delta_wkj[100][20], double delta_wji[65][100], int tt, double y_hat[20][20], double* y_k, double* y_j, double* y_i){
    // 式5 /////////////////////////////////////////////////////////////////////
-   // alpha * delta w_kj -----------------------------------------------------
-   double delta_wkj[100][20]; //更新量
+   int i, j;
+    // パラメータの準備 ////////////////////////////////////////////////////// 
+   double alpha = 0.01; // 安定化定数 
+   double eta = 0.01;   // 学習定数
+
    for(i=0;i<=99;i++){
        for(j=0;j<=19;j++){
            delta_wkj[i][j] = alpha * delta_wkj[i][j];
@@ -93,7 +167,6 @@ int main(){
     }
 
    // (y_k hat - y_k) * y_k --------------------------------------------------
-   int tt = 0; // 重要
    double w_kj_temp2 = 0.0;
    double w_kj_temp[20];
    for(i=0;i<=19;i++){
@@ -128,7 +201,6 @@ int main(){
 
     // 式6 ///////////////////////////////////////////////////////////////////
     // alpha * delta w_ji  ---------------------------------------------------
-    double delta_wji[65][100];
     for(i=0;i<=64;i++){
         for(j=0;j<=99;j++){
             delta_wji[i][j] = alpha * delta_wji[i][j];
@@ -154,7 +226,7 @@ int main(){
         for(j=0;j<=19;j++){
             w_ji_temp3[i] += ww_share[j] * w_kj[i][j];
         }
-        printf("%f\n", w_ji_temp3[i]);
+        //printf("%f\n", w_ji_temp3[i]);
     }
 
     // eta*y_j*(1-y_j)*y_i Σ(y_k hat - y_k) y_k (1-y_k)*w_kj+alpha*deltaw_ji--
@@ -168,45 +240,6 @@ int main(){
             //printf("%f", delta_wji[i][j]);
         }
         //printf("\n");
-    }
-
-/*    // 出力ユニットの平均2乗誤差 ////////////////////////////////////////////
-    double diff[20];
-    double k_n = 20;
-    double diff_sum;    
-    double least_diff; // 求めたい平均2乗誤差
-    // (y_hat - y_k)^2 -------------------------------------------------------
-    for(i=0;i<=19;i++){
-       diff[i] = ( y_hat[tt][i] - y_k[i] ) * ( y_hat[tt][i] - y_k[i] );
-    }
-    for(i=0;i<=19;i++){
-       diff_sum += diff[i];
-    }
-    diff_sum += diff_sum / k_n;
-*/
-    
-
-    return 0;
-}
-
-
-void foward_propagation(double w_ji[64][100], double* y_i, double* y_j, double w_kj[100][20], double* y_k){
-    int i, j = 0;
-    int i_num = 63;
-    int m_num = 99;
-    int o_num = 19;
-    for(i=0;i<=m_num;i++){  // equation1
-        for(j=0;j<=i_num;j++){
-            y_j[i] += y_i[j] * w_ji[j][i];
-        }
-        y_j[i] = logistic_function(y_j[i]);
-    }
-
-    for(i=0;i<=m_num;i++){
-        for(j=0;j<=o_num;j++){
-            y_k[i] += y_j[j] * w_kj[j][i];
-        }
-        y_k[i] = logistic_function(y_k[i]);
     }
 }
 
@@ -280,7 +313,7 @@ void calc_mesh_feature(double* y_i, int z, int moji_raw[64][64][100]){
 void teacher_data(double y_hat[20][20]){
     int i, j;
     for(i=0;i<=19;i++){
-        for(j=0;j<=19;j++){
+        for(j=-16;j<=19;j++){
             if(i == j){
                 y_hat[i][j] = 1.0;
             }else{
@@ -289,70 +322,4 @@ void teacher_data(double y_hat[20][20]){
         }
     }
 }
-
-
-
-/*
-void inner_product(double w[64][100], double* x,  double* y, int s, int t){ // 式1
-    int i, j;
-    for(i=0;i<=t;i++){
-        for(j=0;j<=s;j++){
-            y[i] += x[j] * w[j][i]; 
-        }
-        y[i] = logistic_function(y[i]);
-    }
-}
-
-void inner_product2(double w[100][20], double* x,  double* y, int s, int t){ // 式2
-    int i, j;
-    for(i=0;i<=t;i++){
-        for(j=0;j<=s;j++){
-            y[i] += x[j] * w[j][i]; 
-//            printf("%f\n", y[i]);
-        }
-        y[i] = logistic_function(y[i]);
-    }
-}
-*/
-
-//void inner_product(double [64][100],  double*, double*, int, int);
-//void inner_product2(double [100][20], double*, double*, int, int);
-
-
-
-/*
-    // メッシュ特徴量の計算 //////////////////////////////////////////////////
-    double mesh_feature[64];
-    int square_vec[64];
-    int s_count = 0;
-    k = 0;  //外でも使っているので初期化
-    int start[8] = {0,8,16,24,32,40,48,56};
-    int l,m,p = 0;
-    
-    for(l=0;l<=7;l++){
-        for(m=0;m<=7;m++){
-            for(i=start[l];i<=start[l]+7;i++){
-                for(j=start[m];j<=start[m]+7;j++){
-                    square_vec[s_count] = moji_raw[i][j][0];
-                    s_count++;
-                }
-            }
-            mesh_feature[p] = calculate_portion(square_vec);
-            s_count = 0;
-            p++;
-        }
-    }
-
-    // 入力値y_iの準備 ////////////////////////////////////////////////////////
-    double y_i[65];
-    int z=0;
-    calc_mesh_feature(y_i, z, moji_raw);
-
-    //debug
-    
-    for(i=0;i<=64;i++){
-        printf("%f\n", y_i[i]);
-    }
-    
-*/
 
